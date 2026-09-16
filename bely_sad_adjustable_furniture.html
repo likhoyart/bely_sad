@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Белый сад · Расстановка столов</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f5f3;color:#242923;font:14px Arial,sans-serif}
+main{display:grid;grid-template-columns:340px 1fr;height:100dvh}aside{padding:24px;background:#fff;overflow:auto;border-right:1px solid #ddd}
+h1{font-size:24px;margin:6px 0 10px}p{line-height:1.5;color:#62695e}label{display:block;margin:13px 0 5px;font-size:13px}
+input,select{width:100%;padding:10px;border:1px solid #ccd1c8;border-radius:7px;background:#fff;font:inherit}
+input[type=checkbox]{width:auto;accent-color:#456448}button{padding:10px 13px;border:1px solid #cbd1c7;border-radius:7px;background:#fff;cursor:pointer}
+#view{position:relative;min-height:350px;overflow:hidden}canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+nav{position:absolute;top:16px;left:16px;display:flex;gap:6px;flex-wrap:wrap}.eyebrow,.section{font-size:11px;letter-spacing:1.7px;color:#56714e}
+.section{margin-top:20px;padding-top:13px;border-top:1px solid #e5e8e2}#stats{padding:15px;background:#edf2e9;border-radius:9px;line-height:1.8;margin-top:18px}
+#warning{color:#a34420;line-height:1.5;margin-top:12px}.note{font-size:12px}.hint{position:absolute;top:65px;left:17px;font-size:12px;color:#62695e}
+@media(max-width:760px){main{height:auto;grid-template-columns:1fr}aside{order:2;border:0}#view{height:57dvh;position:sticky;top:0;background:#f4f5f3}.hint{top:100px}}
+</style></head><body><main><aside>
+<div class="eyebrow">БЕЛЫЙ САД</div><h1>Расстановка столов</h1>
+<p>Два ряда. Размеры столов и лавочек регулируются по длине и ширине.</p>
+<label>Количество гостей</label><input id="guests" type="number" min="1" max="1200" step="1" value="250">
+<label style="display:flex;gap:9px;align-items:center"><input id="autoCalc" type="checkbox" checked>Рассчитывать мебель автоматически</label>
+<label style="display:flex;gap:9px;align-items:center"><input id="fullBlocks" type="checkbox" checked>Полные блоки в двух одинаковых рядах</label>
+<div class="section">МЕБЕЛЬ</div>
+<label>Количество столов — всего</label><input id="tables" type="number" min="1" max="240" step="1" value="42">
+<label>Количество лавочек — всего</label><input id="benches" type="number" min="0" max="480" step="1" value="84">
+<label>Длина стола, м</label><input id="tableLength" type="number" min=".5" max="6" step=".1" value="2">
+<label>Ширина стола, м</label><input id="tableWidth" type="number" min=".3" max="3" step=".1" value="1">
+<label>Длина лавочки, м</label><input id="benchLength" type="number" min=".5" max="6" step=".1" value="2">
+<label>Ширина лавочки, м</label><input id="benchWidth" type="number" min=".15" max="1.5" step=".05" value=".4">
+<div class="section">РАССТАНОВКА</div>
+<label>Столов в блоке</label><input id="block" type="number" min="1" max="20" step="1" value="3">
+<label>Между столами внутри блока, м</label><input id="tableGap" type="number" min="0" max="5" step=".1" value="0">
+<label>Между блоками, м</label><input id="blockGap" type="number" min="0" max="10" step=".1" value="1">
+<label>Расстояние между рядами, м</label><input id="aisle" type="number" min="0" max="20" step=".1" value="3">
+<label>Как измерять расстояние</label><select id="mode"><option value="clear">Между внутренними лавочками</option><option value="table">Между краями столешниц</option></select>
+<label>Зазор стол–лавочка, м</label><input id="benchGap" type="number" min="0" max="1" step=".05" value=".2">
+<div class="section">УЧАСТОК</div>
+<label>Условная длина участка, м</label><input id="siteLength" type="number" min="10" max="200" step=".5" value="69">
+<label>Условная ширина участка, м</label><input id="siteWidth" type="number" min="3" max="60" step=".5" value="15">
+<div id="stats"></div><div id="warning"></div>
+<p class="note">Геометрия 3D и вида сверху пересчитывается автоматически по заданным размерам.</p>
+</aside><section id="view"><canvas id="canvas"></canvas><nav>
+<button id="perspective">3D</button><button id="top">Сверху</button><button id="plus">＋</button><button id="minus">−</button><button id="reset">Сброс</button><button id="save">Сохранить PNG</button>
+</nav><div class="hint">Перетаскивайте для вращения · Колесо мыши — масштаб</div></section></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), canvas=$("canvas"),ctx=canvas.getContext("2d"),view=$("view");
+const ids=["tables","benches","tableLength","tableWidth","benchLength","benchWidth","block","tableGap","blockGap","aisle","benchGap","siteLength","siteWidth","mode"];
+const defaults=Object.fromEntries(ids.map(id=>[id,$(id).value]));
+let p={},L={},angle=-.38,elev=.77,zoom=1,W=1,H=1,scale=1,faces=[],frame=0;
+const num=id=>{let e=$(id),v=Number(e.value);return Math.max(Number(e.min),Math.min(Number(e.max),isFinite(v)?v:Number(e.min)))};
+const fmt=n=>n.toLocaleString("ru-RU",{maximumFractionDigits:2});
+function rowLen(n){if(!n)return 0;let b=Math.ceil(n/p.block);return n*p.tableLength+(n-b)*p.tableGap+(b-1)*p.blockGap}
+function update(){
+ let guests=Math.floor(num("guests")),block=Math.floor(num("block"));
+ if($("autoCalc").checked){let t=Math.ceil(guests/6);if($("fullBlocks").checked)t=Math.ceil(t/(2*block))*2*block;$("tables").value=t;$("benches").value=t*2}
+ ids.filter(x=>x!="mode").forEach(x=>p[x]=num(x));["tables","benches","block"].forEach(x=>p[x]=Math.floor(p[x]));p.mode=$("mode").value;
+ let counts=[Math.ceil(p.tables/2),Math.floor(p.tables/2)],lengths=counts.map(rowLen),length=Math.max(...lengths);
+ let side=p.benchGap+p.benchWidth,tableSpace=p.mode=="clear"?p.aisle+2*side:p.aisle,clear=tableSpace-2*side;
+ let width=p.tableWidth+tableSpace+2*side,used=Math.min(p.benches,p.tables*2),seats=used*3;
+ L={guests,counts,lengths,length,tableSpace,clear,width,used,seats};
+ $("stats").innerHTML=`Гостей: <b>${guests}</b><br>Столы: <b>${p.tables}</b> (${counts[0]} + ${counts[1]})<br>Стол: <b>${fmt(p.tableLength)} × ${fmt(p.tableWidth)} м</b><br>Лавочки: <b>${used}</b><br>Лавочка: <b>${fmt(p.benchLength)} × ${fmt(p.benchWidth)} м</b><br>Посадочных мест: <b>${seats}</b><br>${seats>=guests?"Запас мест":"Не хватает мест"}: <b>${Math.abs(seats-guests)}</b><br>Длина посадки: <b>${fmt(length)} м</b><br>Ширина посадки: <b>${fmt(width)} м</b><br>Проход между лавочками: <b>${fmt(clear)} м</b>`;
+ let w=[];if(length>p.siteLength)w.push("Посадка выходит за длину участка.");if(width>p.siteWidth)w.push("Посадка выходит за ширину участка.");if(clear<0)w.push("Внутренние лавочки пересекаются.");if(seats<guests)w.push("Мест недостаточно.");$("warning").textContent=w.join(" ");requestDraw()
+}
+function proj(x,y,z){let a=x*Math.cos(angle)-z*Math.sin(angle),b=x*Math.sin(angle)+z*Math.cos(angle);return[W/2+a*scale,H/2+(b*Math.sin(elev)-y*Math.cos(elev))*scale,y*Math.sin(elev)+b*Math.cos(elev)]}
+function poly(v,c){let q=v.map(a=>proj(...a));faces.push({q,c,d:q.reduce((s,a)=>s+a[2],0)/q.length})}
+function box(x,y,z,l,h,w,c){let a=x-l/2,b=x+l/2,e=z-w/2,d=z+w/2,t=y+h;poly([[a,t,e],[b,t,e],[b,t,d],[a,t,d]],c[0]);if(Math.sin(angle)>=0)poly([[b,y,e],[b,y,d],[b,t,d],[b,t,e]],c[1]);else poly([[a,y,e],[a,y,d],[a,t,d],[a,t,e]],c[1]);if(Math.cos(angle)>=0)poly([[a,y,d],[b,y,d],[b,t,d],[a,t,d]],c[2]);else poly([[a,y,e],[b,y,e],[b,t,e],[a,t,e]],c[2])}
+function furniture(x,z,bench){
+ let l=bench?p.benchLength:p.tableLength,w=bench?p.benchWidth:p.tableWidth,h=bench?.45:.75,c=bench?["#bb8a57","#8c633d","#a67547"]:["#d9b080","#a67c50","#bf9262"];
+ let lx=Math.max(0,l/2-Math.max(.1,l*.12)),lz=Math.max(0,w/2-Math.max(.06,w*.18));
+ for(let dx of [-lx,lx])for(let dz of [-lz,lz])box(x+dx,0,z+dz,.075,h-.07,.075,["#79634c","#584634","#685440"]);box(x,h-.07,z,l,.07,w,c)
+}
+function paint(q,c,s){ctx.beginPath();q.forEach((v,i)=>i?ctx.lineTo(v[0],v[1]):ctx.moveTo(v[0],v[1]));ctx.closePath();ctx.fillStyle=c;ctx.fill();if(s){ctx.strokeStyle=s;ctx.lineWidth=.65;ctx.stroke()}}
+function ground(x,z,l,w,c,s){paint([proj(x-l/2,-.01,z-w/2),proj(x+l/2,-.01,z-w/2),proj(x+l/2,-.01,z+w/2),proj(x-l/2,-.01,z+w/2)],c,s)}
+function requestDraw(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;draw()})}
+function draw(){
+ if(!L.counts)return;W=view.clientWidth;H=view.clientHeight;if(!W||!H)return;let dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle="#f4f5f3";ctx.fillRect(0,0,W,H);
+ let ex=Math.max(p.siteLength,L.length)+6,ez=Math.max(p.siteWidth,L.width)+6,sx=Math.abs(Math.cos(angle))*ex+Math.abs(Math.sin(angle))*ez,sy=(Math.abs(Math.sin(angle))*ex+Math.abs(Math.cos(angle))*ez)*Math.sin(elev)+3;scale=Math.min((W-35)/sx,(H-110)/sy)*zoom;faces=[];ground(0,0,p.siteLength,p.siteWidth,"#e1e8d9","#aab7a0");if(L.clear>0)ground(0,0,L.length,L.clear,"#f2efdf");
+ let centers=[-(p.tableWidth+L.tableSpace)/2,(p.tableWidth+L.tableSpace)/2],bc=[Math.min(L.counts[0]*2,Math.max(Math.ceil(L.used/2),L.used-L.counts[1]*2)),0];bc[1]=L.used-bc[0];
+ for(let r=0;r<2;r++){let x=-L.lengths[r]/2,rem=bc[r];for(let i=0;i<L.counts[r];i++){if(i)x+=i%p.block==0?p.blockGap:p.tableGap;let m=x+p.tableLength/2,z=centers[r];furniture(m,z,false);for(let sg of [-1,1])if(rem>0){furniture(m,z+sg*(p.tableWidth/2+p.benchGap+p.benchWidth/2),true);rem--}x+=p.tableLength}}
+ faces.sort((a,b)=>a.d-b.d);faces.forEach(f=>paint(f.q,f.c,"rgba(49,47,34,.28)"));ctx.font="13px Arial";ctx.fillStyle="#46503f";ctx.fillText(`${p.tables} столов · ${L.used} лавочек · ${L.seats} мест`,16,H-36);ctx.fillText(`Длина ${fmt(L.length)} м · проход ${fmt(L.clear)} м`,16,H-15)
+}
+ids.forEach(id=>$(id).addEventListener("input",()=>{if(id=="tables"||id=="benches")$("autoCalc").checked=false;update()}));
+["guests","autoCalc","fullBlocks"].forEach(id=>$(id).addEventListener("input",update));
+$("top").onclick=()=>{angle=0;elev=Math.PI/2;zoom=1;requestDraw()};$("perspective").onclick=()=>{angle=-.38;elev=.77;zoom=1;requestDraw()};
+$("plus").onclick=()=>{zoom=Math.min(8,zoom*1.2);requestDraw()};$("minus").onclick=()=>{zoom=Math.max(.3,zoom/1.2);requestDraw()};
+$("reset").onclick=()=>{ids.forEach(id=>$(id).value=defaults[id]);$("guests").value=250;$("autoCalc").checked=true;$("fullBlocks").checked=true;angle=-.38;elev=.77;zoom=1;update()};
+$("save").onclick=()=>{draw();let a=document.createElement("a");a.download="bely-sad-layout.png";a.href=canvas.toDataURL("image/png");a.click()};
+let drag=null;canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)};canvas.onpointermove=e=>{if(!drag)return;angle+=(e.clientX-drag[0])*.006;elev=Math.max(.15,Math.min(Math.PI/2,elev+(e.clientY-drag[1])*.006));drag=[e.clientX,e.clientY];requestDraw()};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
+canvas.addEventListener("wheel",e=>{e.preventDefault();zoom=Math.max(.3,Math.min(8,zoom*Math.exp(-e.deltaY*.001)));requestDraw()},{passive:false});window.addEventListener("resize",requestDraw);update();
+</script></body></html>
